@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Geen netwerk: alleen inline CSS en JS toegestaan. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>तारा कैचर</title>
+<style>
+  :root {
+    --space: #071338;
+    --panel: #0d1f55;
+    --text: #eef3ff;
+    --gold: #ffd54a;
+    --cyan: #22d3ee;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--space);
+    color: var(--text);
+    font-family: "Noto Sans Devanagari", "Mangal", "Nirmala UI", system-ui, sans-serif;
+    line-height: 1.5;
+  }
+  main {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 16px;
+  }
+  h1 {
+    margin: 0 0 8px;
+    color: var(--gold);
+    font-size: 2rem;
+  }
+  #instructions { margin: 0 0 12px; font-size: 1.1rem; }
+  canvas {
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    border-radius: 12px;
+    background: var(--space);
+  }
+  .row {
+    display: flex;
+    gap: 12px;
+    margin-top: 12px;
+  }
+  button {
+    flex: 1;
+    min-height: 56px;
+    border: 2px solid var(--cyan);
+    border-radius: 12px;
+    background: var(--panel);
+    color: var(--text);
+    font: inherit;
+    font-size: 1.25rem;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button:focus-visible { outline: 4px solid var(--gold); outline-offset: 2px; }
+  .move {
+    min-height: 80px;
+    font-size: 1.6rem;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  .move.held { background: var(--cyan); color: var(--space); }
+  #mute[aria-pressed="true"] { border-color: var(--gold); color: var(--gold); }
+  #stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    margin: 0 0 12px;
+    font-size: 1.3rem;
+    font-weight: bold;
+  }
+  #stats strong { color: var(--gold); }
+  #result {
+    min-height: 2.5em;
+    margin: 12px 0 0;
+    font-size: 1.4rem;
+    font-weight: bold;
+    color: var(--gold);
+  }
+  /* Lage landscape-schermen: canvas naast de knoppen, alles binnen de viewport. */
+  @media (orientation: landscape) and (max-height: 500px) {
+    main {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-rows: auto auto auto auto auto 1fr;
+      column-gap: 12px;
+      padding: 8px 16px;
+    }
+    h1 { grid-column: 1 / -1; font-size: 1.4rem; line-height: 1.2; margin: 0 0 4px; }
+    #instructions { grid-column: 1 / -1; font-size: 0.95rem; margin: 0 0 8px; }
+    canvas {
+      grid-column: 1;
+      grid-row: 3 / 7;
+      width: auto;
+      height: calc(100vh - 100px);
+      height: calc(100dvh - 100px);
+    }
+    #stats { grid-column: 2; grid-row: 3; margin: 0; font-size: 1.1rem; gap: 0 16px; }
+    .row { grid-column: 2; grid-row: 4; }
+    .row + .row { grid-row: 5; }
+    button { font-size: 1rem; }
+    .move { font-size: 1.3rem; }
+    #result { grid-column: 2; grid-row: 6; font-size: 1rem; }
+  }
+  @media (min-width: 960px) and (min-height: 501px) {
+    canvas { width: min(100%, calc((100dvh - 350px) * 4 / 3)); }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>तारा कैचर</h1>
+  <p id="instructions">
+    टोकरी को बाएँ-दाएँ चलाकर गिरते हुए सुनहरे तारे पकड़ें। आपके पास 30 सेकंड हैं।
+    कीबोर्ड पर ← और → तीर कुंजियाँ दबाएँ, या मोबाइल पर नीचे के बड़े बटन दबाकर रखें।
+  </p>
+
+  <!-- Niet live: elke vangst voorlezen is te druk; eindscore staat in #result. -->
+  <p id="stats">
+    <span>अंक: <strong id="score">0</strong></span>
+    <span>समय: <strong id="time">30</strong> सेकंड</span>
+    <span>सर्वश्रेष्ठ: <strong id="best">0</strong></span>
+  </p>
+
+  <canvas id="game" role="img"
+          aria-label="खेल का मैदान: अंतरिक्ष में गिरते सुनहरे तारे और नीली टोकरी"
+          aria-describedby="instructions">
+    आपका ब्राउज़र कैनवास नहीं दिखा सकता।
+  </canvas>
+
+  <div class="row">
+    <button id="left" class="move" type="button" aria-label="टोकरी बाएँ ले जाएँ" disabled>← बाएँ</button>
+    <button id="right" class="move" type="button" aria-label="टोकरी दाएँ ले जाएँ" disabled>दाएँ →</button>
+  </div>
+
+  <div class="row">
+    <button id="start" type="button">शुरू करें</button>
+    <button id="restart" type="button" disabled>फिर से खेलें</button>
+    <button id="mute" type="button" aria-pressed="false">आवाज़ म्यूट</button>
+  </div>
+
+  <p id="result" role="status" aria-live="polite">शुरू करने के लिए “शुरू करें” दबाएँ।</p>
+</main>
+
+<script>
+"use strict";
+
+// ---- Vaste logische afmetingen: alle spel-logica rekent hierin ----
+const WIDTH = 800;
+const HEIGHT = 600;
+const ROUND_SECONDS = 30;
+
+const BASKET_WIDTH = 140;
+const BASKET_HEIGHT = 44;
+const BASKET_Y = HEIGHT - 70;
+const BASKET_SPEED = 520;        // logische eenheden per seconde
+
+const STAR_RADIUS = 28;
+const STAR_MIN_SPEED = 150;
+const STAR_MAX_SPEED = 260;
+const SPAWN_INTERVAL = 0.75;     // seconden tussen nieuwe sterren
+
+// ---- DOM ----
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const startButton = document.getElementById("start");
+const restartButton = document.getElementById("restart");
+const leftButton = document.getElementById("left");
+const rightButton = document.getElementById("right");
+const resultText = document.getElementById("result");
+const muteButton = document.getElementById("mute");
+const scoreText = document.getElementById("score");
+const timeText = document.getElementById("time");
+const bestText = document.getElementById("best");
+
+const BEST_KEY = "tara-catcher-best";
+
+const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+// ---- Spelstatus ----
+let phase = "ready";             // "ready" | "playing" | "over"
+let basketX = (WIDTH - BASKET_WIDTH) / 2;
+let stars = [];
+let caught = 0;
+let timeLeft = ROUND_SECONDS;
+let spawnTimer = 0;
+let lastFrame = 0;
+let frameId = 0;
+let elapsed = 0;                 // alleen voor de fonkel-animatie
+let shownSeconds = ROUND_SECONDS;
+let best = loadBest();
+let audioCtx = null;             // pas aangemaakt na klik op Start
+let muted = false;
+
+const input = { left: false, right: false };
+
+// ---- Beste score: opslag mag ontbreken of geblokkeerd zijn ----
+function loadBest() {
+  try {
+    const value = parseInt(localStorage.getItem(BEST_KEY), 10);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  } catch (error) {
+    return 0;
+  }
+}
+
+function saveBest(value) {
+  try {
+    localStorage.setItem(BEST_KEY, String(value));
+  } catch (error) {
+    // Geen opslag (privémodus, quota, beleid): spel gaat gewoon door.
+  }
+}
+
+// ---- Geluid: gesynthetiseerd, geen bestanden ----
+function initAudio() {
+  try {
+    if (!audioCtx) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+      audioCtx = new AudioContextClass();
+    }
+    if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+  } catch (error) {
+    audioCtx = null;             // zonder geluid verder spelen
+  }
+}
+
+function playCatchSound() {
+  if (muted || !audioCtx || audioCtx.state !== "running") return;
+  try {
+    const t = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(880, t);
+    osc.frequency.exponentialRampToValueAtTime(1760, t + 0.12);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.25, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + 0.22);
+  } catch (error) {
+    // Geluid is optioneel.
+  }
+}
+
+function updateStats() {
+  scoreText.textContent = String(caught);
+  timeText.textContent = String(shownSeconds);
+  bestText.textContent = String(best);
+}
+
+// Vaste achtergrondsterretjes (pseudo-random met vaste seed, zelfde elke keer).
+const backgroundDots = [];
+let seed = 7;
+function seededRandom() {
+  seed = (seed * 16807) % 2147483647;
+  return seed / 2147483647;
+}
+for (let i = 0; i < 70; i++) {
+  backgroundDots.push({
+    x: seededRandom() * WIDTH,
+    y: seededRandom() * HEIGHT,
+    r: 0.8 + seededRandom() * 1.6,
+    phase: seededRandom() * Math.PI * 2,
+  });
+}
+
+// ---- Responsive canvas: scherpe pixels, zelfde logische coördinaten ----
+function resizeCanvas() {
+  const ratio = window.devicePixelRatio || 1;
+  const displayWidth = canvas.clientWidth;
+  const displayHeight = canvas.clientHeight;
+  canvas.width = Math.round(displayWidth * ratio);
+  canvas.height = Math.round(displayHeight * ratio);
+  ctx.setTransform(canvas.width / WIDTH, 0, 0, canvas.height / HEIGHT, 0, 0);
+  draw();
+}
+
+// ---- Rondes ----
+function startRound() {
+  phase = "playing";
+  basketX = (WIDTH - BASKET_WIDTH) / 2;
+  stars = [];
+  caught = 0;
+  timeLeft = ROUND_SECONDS;
+  shownSeconds = ROUND_SECONDS;
+  spawnTimer = 0;
+  input.left = false;
+  input.right = false;
+  leftButton.classList.remove("held");
+  rightButton.classList.remove("held");
+  updateStats();
+
+  startButton.disabled = true;
+  restartButton.disabled = false;
+  leftButton.disabled = false;
+  rightButton.disabled = false;
+  resultText.textContent = "खेल जारी है… तारे पकड़ें!";
+
+  // Restart tijdens een ronde: oude loop stoppen, anders lopen er twee tegelijk.
+  cancelAnimationFrame(frameId);
+  lastFrame = performance.now();
+  frameId = requestAnimationFrame(loop);
+}
+
+function endRound() {
+  phase = "over";
+  stars = [];
+  input.left = false;
+  input.right = false;
+  leftButton.classList.remove("held");
+  rightButton.classList.remove("held");
+
+  startButton.disabled = true;
+  leftButton.disabled = true;
+  rightButton.disabled = true;
+
+  shownSeconds = 0;
+  const isNewBest = caught > best;
+  if (isNewBest) {
+    best = caught;
+    saveBest(best);
+  }
+  updateStats();
+
+  const catchText = caught === 1 ? "1 तारा पकड़ा" : `${caught} तारे पकड़े`;
+  const bestLine = isNewBest ? `नया सर्वश्रेष्ठ स्कोर: ${best}!` : `सर्वश्रेष्ठ स्कोर: ${best}।`;
+  resultText.textContent = `समय समाप्त! आपने ${catchText}। अंतिम स्कोर: ${caught}। ${bestLine} फिर से खेलने के लिए “फिर से खेलें” दबाएँ।`;
+  draw();
+  restartButton.focus();
+}
+
+// ---- Game loop ----
+function loop(now) {
+  if (phase !== "playing") return;
+
+  // dt begrensd: een verborgen tabblad laat de tijd niet doorlopen.
+  const dt = Math.min((now - lastFrame) / 1000, 0.05);
+  lastFrame = now;
+
+  update(dt);
+  draw();
+
+  if (phase === "playing") frameId = requestAnimationFrame(loop);
+}
+
+function update(dt) {
+  elapsed += dt;
+  timeLeft -= dt;
+  if (timeLeft <= 0) {
+    endRound();
+    return;
+  }
+  const seconds = Math.ceil(timeLeft);
+  if (seconds !== shownSeconds) {
+    shownSeconds = seconds;
+    timeText.textContent = String(seconds);
+  }
+
+  // Mand bewegen
+  const direction = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  basketX += direction * BASKET_SPEED * dt;
+  basketX = Math.max(0, Math.min(WIDTH - BASKET_WIDTH, basketX));
+
+  // Nieuwe sterren
+  spawnTimer -= dt;
+  if (spawnTimer <= 0) {
+    spawnTimer = SPAWN_INTERVAL;
+    stars.push({
+      x: STAR_RADIUS + Math.random() * (WIDTH - STAR_RADIUS * 2),
+      y: -STAR_RADIUS,
+      speed: STAR_MIN_SPEED + Math.random() * (STAR_MAX_SPEED - STAR_MIN_SPEED),
+      spin: Math.random() * Math.PI,
+    });
+  }
+
+  // Sterren laten vallen, vangen of verwijderen
+  stars = stars.filter((star) => {
+    star.y += star.speed * dt;
+    if (!motionQuery.matches) star.spin += dt;
+
+    const insideBasketX = star.x >= basketX && star.x <= basketX + BASKET_WIDTH;
+    const touchesBasketTop = star.y + STAR_RADIUS >= BASKET_Y && star.y <= BASKET_Y + BASKET_HEIGHT;
+    if (insideBasketX && touchesBasketTop) {
+      caught += 1;
+      scoreText.textContent = String(caught);
+      playCatchSound();
+      return false;
+    }
+    return star.y - STAR_RADIUS < HEIGHT;
+  });
+}
+
+// ---- Tekenen ----
+function draw() {
+  drawBackground();
+  stars.forEach(drawStar);
+  drawBasket();
+}
+
+function drawBackground() {
+  const gradient = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+  gradient.addColorStop(0, "#0b1d5c");
+  gradient.addColorStop(1, "#030a24");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  const twinkle = !motionQuery.matches && phase === "playing";
+  for (const dot of backgroundDots) {
+    const alpha = twinkle ? 0.5 + 0.4 * Math.sin(elapsed * 2 + dot.phase) : 0.7;
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(dot.x, dot.y, dot.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawStar(star) {
+  const outer = STAR_RADIUS;
+  const inner = STAR_RADIUS * 0.45;
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const radius = i % 2 === 0 ? outer : inner;
+    const angle = star.spin - Math.PI / 2 + (i * Math.PI) / 5;
+    ctx.lineTo(star.x + Math.cos(angle) * radius, star.y + Math.sin(angle) * radius);
+  }
+  ctx.closePath();
+  ctx.fillStyle = "#ffd54a";
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "#fff3b0";
+  ctx.stroke();
+}
+
+function drawBasket() {
+  const left = basketX;
+  const right = basketX + BASKET_WIDTH;
+  const top = BASKET_Y;
+  const bottom = BASKET_Y + BASKET_HEIGHT;
+  const inset = 16;
+
+  // Trapezium: breed aan de bovenkant, smaller onderaan.
+  ctx.beginPath();
+  ctx.moveTo(left, top);
+  ctx.lineTo(right, top);
+  ctx.lineTo(right - inset, bottom);
+  ctx.lineTo(left + inset, bottom);
+  ctx.closePath();
+  ctx.fillStyle = "#22d3ee";
+  ctx.fill();
+
+  // Rand en vlechtlijnen
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = "#a5f3fc";
+  ctx.stroke();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "#0e7490";
+  for (let x = left + 28; x < right - 20; x += 24) {
+    ctx.beginPath();
+    ctx.moveTo(x, top + 4);
+    ctx.lineTo(x - 6, bottom - 4);
+    ctx.stroke();
+  }
+}
+
+// ---- Invoer: toetsenbord ----
+window.addEventListener("keydown", (event) => {
+  if (phase !== "playing") return;
+  if (event.key === "ArrowLeft") input.left = true;
+  else if (event.key === "ArrowRight") input.right = true;
+  else return;
+  event.preventDefault();        // voorkom scrollen van de pagina
+});
+
+window.addEventListener("keyup", (event) => {
+  if (event.key === "ArrowLeft") input.left = false;
+  if (event.key === "ArrowRight") input.right = false;
+});
+
+window.addEventListener("blur", () => {
+  input.left = false;
+  input.right = false;
+});
+
+// ---- Invoer: grote knoppen (ingedrukt houden) ----
+function bindHoldButton(button, key) {
+  const press = (event) => {
+    if (phase !== "playing") return;
+    event.preventDefault();
+    input[key] = true;
+    button.classList.add("held");
+  };
+  const release = () => {
+    input[key] = false;
+    button.classList.remove("held");
+  };
+  button.addEventListener("pointerdown", press);
+  button.addEventListener("pointerup", release);
+  button.addEventListener("pointerleave", release);
+  button.addEventListener("pointercancel", release);
+  button.addEventListener("contextmenu", (event) => event.preventDefault());
+}
+bindHoldButton(leftButton, "left");
+bindHoldButton(rightButton, "right");
+
+// ---- Start / opnieuw ----
+startButton.addEventListener("click", () => {
+  initAudio();                   // eerste gebruikersactie: nu pas audio
+  startRound();
+});
+restartButton.addEventListener("click", () => {
+  initAudio();                   // alleen hervatten; context bestaat al na Start
+  startRound();
+});
+
+muteButton.addEventListener("click", () => {
+  muted = !muted;
+  muteButton.setAttribute("aria-pressed", String(muted));
+});
+
+window.addEventListener("resize", resizeCanvas);
+motionQuery.addEventListener("change", draw);
+updateStats();
+resizeCanvas();
+</script>
+</body>
+</html>
